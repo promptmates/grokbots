@@ -17,7 +17,7 @@ Scripts: sibling `daily_diff.py`; `../live-ats-board-search/search_boards.py`; `
 ## 1. Check inputs
 - If `CM/search-preferences.md` says "CareerMate paused: yes", stop and post nothing. (Pausing normally pauses this routine; this catches a routine that still fires.)
 - Need `CM/search-preferences.md` and `CM/keywords.txt` (confirmed phrases, one per line). If either is missing, post one line: "I need a full CareerMate run before I can watch for new roles. Say 'run CareerMate' when you're ready." and stop. This is the only setup message the daily run sends.
-- Filters come from `CM/daily-config.json`. If it is missing, or its `prefs_sha` differs from the sha256 of `search-preferences.md` (`sha256sum`), rebuild it from the prefs with the table below and keep every key. Only stated preferences become filters; anything "not stated" stays empty. When a filter changes, daily_diff.py re-checks roles it filtered out before, so a loosened filter can surface them.
+- Filters come from `CM/daily-config.json`. If it is missing, or its `prefs_sha` differs from the sha256 of `search-preferences.md` (`sha256sum`), rebuild it from the prefs with the table below and keep every key before you run daily_diff.py. Only stated preferences become filters; anything "not stated" stays empty. When a filter changes, daily_diff.py re-checks roles it filtered out before, so a loosened filter can surface them. If the file is still missing, daily_diff.py does not invent filters: it warns on stderr and the digest says the results are unfiltered. `--seed` (the full run's baseline) does not need the file.
 
 | Preference | daily-config.json |
 |---|---|

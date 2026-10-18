@@ -7,7 +7,7 @@
 
 ## Summary
 Two or three sentences: what the person does, at what scope, and where they want to go next.
-Example: Operations manager who runs scheduling and staffing for a 200-person field team at Acme, wants to move into workforce planning or operations strategy.
+Example: Operations manager who runs scheduling and staffing for a 200-person field team, and wants to move into workforce planning or operations strategy.
 
 ## Core skills
 skill one | skill two | skill three

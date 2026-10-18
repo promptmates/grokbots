@@ -12,8 +12,9 @@ description: >-
 Job boards find roles the ATS board list misses, especially at companies on Workday, iCIMS, Taleo or SuccessFactors. They are for discovery only. Every role you report must link to the company's own careers or ATS page.
 
 ## Who does what
+`sign-in`, `in-chat-forms`, and `site-playbooks-linkedin` are platform-provided skills on Grok Bot. They are optional and are not part of this repo, so it is normal that they are not in the skills folder. When one of them is available, follow it. When it is not, use the steps written here.
 - The main agent runs this skill. All browser work goes through a `computerUse` subagent that the main agent dispatches, one board per dispatch. The subagent does not read skills, so put every rule it needs (URL or search-box steps, pacing, what to read back, the stop rules below) in the Task text.
-- Secrets never go in the Task text. Sign-in passwords and one-time codes come from the user through the secure in-chat form (`RequestUserForm`), following the managed `sign-in` and `in-chat-forms` skills. Never ask the user to paste a code or password in chat.
+- Secrets never go in the Task text. Sign-in passwords and one-time codes come from the user through the secure in-chat form (`RequestUserForm`). Follow the platform `sign-in` and `in-chat-forms` skills when they are available. Never ask the user to paste a code or password in chat.
 - The lookup is read-only: never apply, save, follow, message or set alerts on any board.
 
 ## Inputs
@@ -23,9 +24,9 @@ Job boards find roles the ATS board list misses, especially at companies on Work
 
 ## LinkedIn
 - Use LinkedIn jobs search in the box browser's signed-in session. The anonymous guest endpoint (`/jobs-guest/...`) gets rate-limited with HTTP 429 on runs of this size; if any guest request returns 429, stop using it for the rest of the run and switch to the signed-in browser search, with no retries.
-- If the managed `site-playbooks-linkedin` skill is available, read it before dispatching and follow its URL patterns, filters, field extractors and pacing, with the signed-in browser path as the default for multi-title runs.
+- If the platform `site-playbooks-linkedin` skill is available, read it before dispatching and follow its URL patterns, filters, field extractors and pacing, with the signed-in browser path as the default for multi-title runs. If it is not, use the URL and steps below.
 - URL: `https://www.linkedin.com/jobs/search/?keywords=<"Title">&location=<Location>&f_TPR=r2592000` (add `&f_WT=2` for remote). Read title, company, location, posted date, salary if shown, the job URL, and whether the apply button is Easy Apply or an external link (the external link usually is the company ATS).
-- If the session is signed out, sign in per the `sign-in` skill (secure form, then screen handoff if needed), then re-dispatch.
+- If the session is signed out, sign in with the secure form (the platform `sign-in` skill when it is available), then screen handoff if needed, then re-dispatch.
 
 ## Indeed
 - Indeed requires signing in for search at this volume. Sign-in may ask for an email code and then an SMS code. The user must supply each one through the secure in-chat form; codes expire within minutes, so send the form as soon as the code page is open (set submitAfterFill for a code-only page). The session persists in the box browser for later runs.

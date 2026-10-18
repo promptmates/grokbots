@@ -21,6 +21,20 @@ from concurrent.futures import ThreadPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKDAY_UA = "CareerMate/1.1 (read-only public job listing search; about 1 request per second; never logs in or applies)"
 
+def resolve_boards(path):
+    """Use path when that file exists. Otherwise ~/careermate/target-companies.md, then the copy next to this script.
+    A relative name such as target-companies.md therefore works from any working directory."""
+    if path and os.path.isfile(path):
+        return path
+    for c in (os.path.expanduser("~/careermate/target-companies.md"),
+              os.path.join(HERE, "target-companies.md")):
+        if os.path.isfile(c):
+            print(f"--- boards: {path} not found; using {c} ---", file=sys.stderr)
+            return c
+    raise SystemExit(
+        f"search_boards.py: board list not found: {path} "
+        f"(also checked ~/careermate/target-companies.md and {os.path.join(HERE, 'target-companies.md')})")
+
 def parse_boards(path, exclude):
     boards, platform, section = [], None, ""
     for line in open(path, encoding="utf-8"):
@@ -417,7 +431,9 @@ def run_description(boards, kws, a, t0):
 
 def main():
     ap = argparse.ArgumentParser(allow_abbrev=False)
-    ap.add_argument("--boards", required=True)
+    ap.add_argument("--boards", required=True,
+                    help="target-companies.md. If that path is missing, use ~/careermate/target-companies.md, "
+                         "then the copy next to this script")
     ap.add_argument("--keyword", action="append", default=[],
                     help='one title phrase, repeatable, e.g. --keyword "VP, Sales" --keyword "head of operations"')
     ap.add_argument("--keywords-file", action="append", default=[],
@@ -435,7 +451,7 @@ def main():
                     help="auto (default): local embedding model if fastembed is installed, else stdlib TF-IDF")
     dm.add_argument("--embed-model", default=None, help="fastembed model (default sentence-transformers/all-MiniLM-L6-v2)")
     dm.add_argument("--semantic-min", type=float, default=None,
-                    help="similarity cutoff for description-only rows (default 0.40 fastembed, 0.12 tfidf)")
+                    help="similarity cutoff for description-only rows (default 0.45 fastembed, 0.12 tfidf)")
     dm.add_argument("--max-description-only", type=int, default=400, help="cap on description-only rows, best first (default 400)")
     dm.add_argument("--min-term-hits", type=int, default=2,
                     help="distinct profile terms a description needs to pass pass 1 without a title hit (default 2)")
@@ -474,7 +490,7 @@ def main():
     kws = compile_phrases(load_phrases(a))
     if not kws:
         ap.error("give at least one --keyword or --keywords-file")
-    boards = parse_boards(a.boards, a.exclude_section)
+    boards = parse_boards(resolve_boards(a.boards), a.exclude_section)
     wd_result = {}
     wd_thread = None
     if a.include_workday:

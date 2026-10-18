@@ -11,6 +11,8 @@ the 15% buffer), the Phase 3 score, and the tracker's learned adjustments (re-ra
 
 Stdout: a markdown digest when there are new matches, and NOTHING when there are none (the run stays silent).
 Stderr: one summary line. --json-out writes the new rows; the ledger is updated in place (or --ledger-out).
+If daily-config.json is missing on a non-seed run, stderr warns and the digest says the results are unfiltered.
+--dry-run does not write the ledger or the daily JSON, and the digest does not claim that file was saved.
 
 Files (default ~/careermate, override with --home): seen-jobs.json (ledger), daily-config.json (filters and scoring
 inputs derived from search-preferences.md), keywords.txt, applications-tracker.md, learned-weights.json.
@@ -305,9 +307,11 @@ def band(s):
 SOURCE = {"greenhouse": "Greenhouse", "ashby": "Ashby", "lever": "Lever", "workday": "Workday",
           "workable": "Workable", "smartrecruiters": "SmartRecruiters"}
 
-def digest(new, dropped, cfg, now, extra_note, more_path):
-    L = [f"**CareerMate: {len(new)} new {'match' if len(new) == 1 else 'matches'}** ({now.strftime('%a %b %-d')})", "",
-         "| Score | Title | Company | Location | Pay | Source | Link |", "|---|---|---|---|---|---|---|"]
+def digest(new, dropped, cfg, now, extra_note, more_path, unfiltered=False):
+    L = [f"**CareerMate: {len(new)} new {'match' if len(new) == 1 else 'matches'}** ({now.strftime('%a %b %-d')})"]
+    if unfiltered:
+        L.append("Unfiltered: daily-config.json was not found, so location, pay, title, and industry filters were not applied. These scores are not checked against your preferences.")
+    L += ["", "| Score | Title | Company | Location | Pay | Source | Link |", "|---|---|---|---|---|---|---|"]
     shown = new[: cfg.get("max_rows", 15)]
     for j in shown:
         pay = j.get("pay_text") or "not stated"
@@ -333,7 +337,7 @@ def digest(new, dropped, cfg, now, extra_note, more_path):
             notes.append(f"- {j['company']}, {j['title']}: posting details {j['details']}; pay and location not checked.")
     if notes:
         L += ["", "Notes:"] + notes
-    if len(new) > len(shown):
+    if more_path and len(new) > len(shown):
         L += ["", f"{len(new) - len(shown)} more new roles scored lower; they are saved in {more_path}. Ask to see them."]
     drops = []
     if dropped.get("pay"):
@@ -383,7 +387,12 @@ def main():
     now = today_of(a)
     iso = now.isoformat()
 
+    config_missing = not os.path.isfile(a.config)
     cfg = dict(DEFAULT_CONFIG); cfg.update(load_json(a.config, {}))
+    if config_missing and not a.seed:
+        print(f"warning: {a.config} is missing, so this run applies no location, pay, title, or industry filters. "
+              "Off-location and ruled-out roles can score as Strong. Build daily-config.json from "
+              "search-preferences.md before a daily run.", file=sys.stderr)
     fp = hashlib.sha256(json.dumps({k: cfg.get(k) for k in ("pay_floor", "pay_buffer", "location_allow", "location_block",
                         "exclude_title_patterns", "require_title_patterns", "exclude_companies", "exclude_sections")},
                         sort_keys=True).encode()).hexdigest()[:12]
@@ -495,11 +504,13 @@ def main():
 
     clean = [{k: v for k, v in j.items() if k not in ("text", "description")} for j in new]
     more_path = a.json_out or os.path.join(H, "daily", f"new-{iso}.json")
+    written = None
     if new:
         if not a.dry_run or a.json_out:
             os.makedirs(os.path.dirname(os.path.abspath(more_path)), exist_ok=True)
             json.dump(clean, open(more_path, "w"), indent=1)
-        md = digest(new, dropped, cfg, now, a.note, more_path)
+            written = more_path
+        md = digest(new, dropped, cfg, now, a.note, written, unfiltered=config_missing)
         print(md)
         if a.digest_out:
             open(a.digest_out, "w").write(md + "\n")

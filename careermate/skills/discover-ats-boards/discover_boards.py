@@ -10,7 +10,7 @@ Usage:
     python3 discover_boards.py                          # Run against built-in lists
     python3 discover_boards.py --file companies.txt    # One company name per line
     python3 discover_boards.py --company "Notion"      # Single company
-    python3 discover_boards.py --update                 # Write results to target-companies.md
+    python3 discover_boards.py --update                 # Append results to ~/careermate/target-companies.md
 
     python3 discover_boards.py --company "Zendesk" --platforms workday --workday-append ../live-ats-board-search/workday-companies.md
 
@@ -24,6 +24,7 @@ Requires: Python 3.8+, no external dependencies (uses urllib only)
 
 import argparse
 import json
+import shutil
 import sys
 import time
 import urllib.request
@@ -382,6 +383,32 @@ DEFAULT_COMPANIES = [
 
 # --- Main ---
 
+def append_discovered(output):
+    """Append discovery markdown to ~/careermate/target-companies.md.
+
+    The user list is the file later searches read. If it does not exist yet, copy the shipped
+    list that lives next to live-ats-board-search (this script's sibling folder) so --update
+    does not depend on the shell's working directory or on a context/ folder.
+    """
+    dest = Path.home() / "careermate" / "target-companies.md"
+    if not dest.is_file():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        sibling = Path(__file__).resolve().parent.parent / "live-ats-board-search" / "target-companies.md"
+        if sibling.is_file():
+            shutil.copyfile(sibling, dest)
+            print(f"Seeded {dest} from {sibling}", file=sys.stderr)
+        else:
+            dest.write_text("# Target Companies\n", encoding="utf-8")
+            print(f"Shipped list not found at {sibling}; started {dest}", file=sys.stderr)
+    with dest.open("a", encoding="utf-8") as f:
+        f.write("\n\n# Auto-Discovered Boards\n")
+        f.write(f"# Discovered: {time.strftime('%Y-%m-%d')}\n")
+        f.write(output)
+        if output and not output.endswith("\n"):
+            f.write("\n")
+    print(f"Results appended to {dest}", file=sys.stderr)
+    return dest
+
 def main():
     parser = argparse.ArgumentParser(
         description="Discover ATS board tokens for companies"
@@ -395,7 +422,8 @@ def main():
     parser.add_argument("--json", action="store_true",
                         help="Output as JSON instead of markdown")
     parser.add_argument("--update", action="store_true",
-                        help="Append results to context/target-companies.md")
+                        help="Append results to ~/careermate/target-companies.md "
+                             "(copied from the shipped live-ats-board-search list first, if you do not have one yet)")
     parser.add_argument("--output", help="Write results to this file")
     parser.add_argument("--workday-append", help="with --platforms including workday: append verified Workday sites to this workday-companies.md")
     parser.add_argument("--workday-section", default="Auto-discovered", help="### section heading for appended Workday rows")
@@ -462,12 +490,7 @@ def main():
             f.write(output)
         print(f"Results written to {args.output}", file=sys.stderr)
     elif args.update:
-        target = Path(__file__).parent.parent / "context" / "target-companies.md"
-        with open(target, "a") as f:
-            f.write("\n\n# Auto-Discovered Boards\n")
-            f.write(f"# Discovered: {time.strftime('%Y-%m-%d')}\n")
-            f.write(output)
-        print(f"Results appended to {target}", file=sys.stderr)
+        append_discovered(output)
     else:
         print(output)
 

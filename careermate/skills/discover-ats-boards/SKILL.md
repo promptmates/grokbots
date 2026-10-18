@@ -16,7 +16,7 @@ Uses sibling `discover_boards.py` (Python 3.8+, stdlib only). It generates plaus
 1. Single company: `python3 discover_boards.py --company "Figma"`
    Batch: write names one per line to a file, then `python3 discover_boards.py --file companies.txt --output results.md`
    Options: `--platforms greenhouse,lever,ashby,workable,smartrecruiters`, `--json`, `--workers N`. With no args it runs a built-in list of ~131 companies.
-2. Do NOT use `--update` (it writes to a fixed relative path). Instead, if needed copy `../live-ats-board-search/target-companies.md` to `~/careermate/target-companies.md`, then add each discovered company as a row `| Company | token | ~jobs | notes |` under the matching platform section.
+2. Save onto the user's list with `--update`: `python3 discover_boards.py --company "Figma" --update` (or `--file companies.txt --update`). It appends to `~/careermate/target-companies.md`. If that file is missing, the script first copies the shipped list from the `live-ats-board-search` folder next to this skill (resolved from the script's own location, so the shell's cwd does not matter), then appends. You can also add a row by hand, `| Company | token | ~jobs | notes |`, under the matching platform section.
 3. If the script finds nothing, find the token manually: open the company careers page, click a posting, read the URL:
    - `boards.greenhouse.io/COMPANY/jobs/123` or `job-boards.greenhouse.io/COMPANY/...` -> Greenhouse token COMPANY
    - `jobs.lever.co/COMPANY/abc-123` -> Lever slug COMPANY
