@@ -40,6 +40,7 @@ Fill this in after your first CareerMate run, or let the agent populate it from 
 ## Deal-Breakers
 
 -
+- Individual-contributor engineering roles (auto / include / exclude / rank low; blank = auto: left out unless your confirmed titles include engineering titles):
 
 ## Nice-to-Haves
 

@@ -11,6 +11,9 @@ the 15% buffer), the Phase 3 score, and the tracker's learned adjustments (re-ra
 
 Stdout: a markdown digest when there are new matches, and NOTHING when there are none (the run stays silent).
 Stderr: one summary line. --json-out writes the new rows; the ledger is updated in place (or --ledger-out).
+Hands-on engineering titles (software/backend/ML/data engineer, SRE, developer, ...) that matched only on a topic
+phrase are dropped as "filtered:engineering" when none of the confirmed keywords is an engineering title
+(daily-config.json "engineering_ic_filter"; --engineering-check previews the decision without touching the ledger).
 If daily-config.json is missing on a non-seed run, stderr warns and the digest says the results are unfiltered.
 --dry-run does not write the ledger or the daily JSON, and the digest does not claim that file was saved.
 
@@ -54,7 +57,69 @@ DEFAULT_CONFIG = {
     "workday": {"opt_in": False, "day": "Monday", "search_terms": []},
     # Weekly description-matching pass (search_boards.py --match description); needs ~/careermate/match-profile.md.
     "description_match": {"enabled": False, "day": "Monday", "max_description_only": 60},
+    # Individual-contributor engineering titles that matched only on a domain/topic phrase ("ai platform",
+    # "talent intelligence"). mode: "auto" (on only when no confirmed keyword is an engineering title), "on", "off".
+    # action: "drop" (filtered:engineering) or "demote" (kept, capped at 34 = Low, with a note).
+    # patterns / exempt_patterns: null = built-in defaults below; a list replaces them;
+    # extra_patterns / extra_exempt_patterns add to them.
+    "engineering_ic_filter": {"mode": "auto", "action": "drop", "patterns": None, "exempt_patterns": None,
+                              "extra_patterns": [], "extra_exempt_patterns": []},
 }
+
+# Hands-on engineering titles (matched case-insensitively against the raw title).
+ENG_IC_PATTERNS = [
+    r"\bsoftware (?:development |dev )?engineer\b",
+    r"\b(?:back|front)[ -]?end (?:software )?(?:engineer|developer)\b",
+    r"\bfull[ -]?stack (?:software )?(?:engineer|developer)\b",
+    r"\b(?:swe|sde|sre)\b",
+    r"\b(?:ml|machine learning|ai|ai/ml|ml/ai|applied ai|applied ml|llm|genai|gen ai|mlops|ml ops|deep learning|nlp|"
+    r"computer vision|ai[ -]native) engineer\b",
+    r"\b(?:data|analytics|data platform|data infrastructure|big data|etl) engineer\b",
+    r"\bsite reliability engineer\b",
+    r"\b(?:devops|dev ops|devsecops|reliability|infrastructure|infra|platform|cloud|systems?|production|design) engineer\b",
+    r"\b(?:mobile|ios|android|web|application|applications|security|product|firmware|embedded|qa|test|automation|"
+    r"research|forward[ -]deployed|founding|staff|principal|senior|lead) engineer\b",
+    r"\bengineer (?:i{1,3}|iv|v|[1-5])\b",
+    r"\b(?:software|web|mobile|ios|android|application|salesforce|workday|python|java|javascript|react|game|blockchain|"
+    r"bi|etl|integration|integrations|senior|staff|lead|principal|junior) developer\b",
+    r"\bmember of (?:the )?technical staff\b",
+    r"\bprogrammer\b",
+]
+# Leadership titles stay in even when they contain an engineering phrase ("Head of Data Engineering", "Manager, SRE").
+ENG_IC_EXEMPT = [r"\b(?:manager|director|head|vp|vice president|chief|cto|svp|evp)\b"]
+# A confirmed keyword that looks like this means the user targets engineering roles, so "auto" stays off.
+ENG_TARGET_RX = re.compile(r"\b(?:engineer|engineers|engineering|developer|developers|devops|swe|sde|sre|programmer|"
+                           r"technical staff)\b", re.I)
+
+def engineering_rule(cfg, keyword_phrases):
+    """Resolve engineering_ic_filter for this user. Returns a dict: active, action, why, rx (compiled), exempt."""
+    c = dict(DEFAULT_CONFIG["engineering_ic_filter"]); c.update(cfg.get("engineering_ic_filter") or {})
+    mode = str(c.get("mode") or "auto").lower()
+    pats = list(ENG_IC_PATTERNS if c.get("patterns") is None else c["patterns"]) + list(c.get("extra_patterns") or [])
+    ex = list(ENG_IC_EXEMPT if c.get("exempt_patterns") is None else c["exempt_patterns"]) + list(c.get("extra_exempt_patterns") or [])
+    rx = [re.compile(p, re.I) for p in pats]
+    eng_kw = [k for k in keyword_phrases
+              if ENG_TARGET_RX.search(k.replace("*", "")) or any(r.search(k.replace("*", "")) for r in rx)]
+    if mode == "off":
+        active, why = False, "off in daily-config.json"
+    elif mode == "on":
+        active, why = True, "on in daily-config.json"
+    elif eng_kw:
+        active, why = False, "auto: confirmed keywords include engineering titles (" + ", ".join(eng_kw[:3]) + ")"
+    else:
+        active, why = True, "auto: no confirmed keyword is an engineering title"
+    customized = (c.get("patterns") is not None or c.get("exempt_patterns") is not None or c.get("extra_patterns")
+                  or c.get("extra_exempt_patterns") or c.get("action", "drop") != "drop")
+    return {"active": active, "action": "demote" if c.get("action") == "demote" else "drop", "why": why,
+            "rx": rx, "exempt": [re.compile(p, re.I) for p in ex], "engineering_keywords": eng_kw,
+            # fingerprint part: None while it is the default "on with built-in patterns", so upgrading does not
+            # make the ledger re-check old filtered rows; any change (off, custom patterns) re-checks them.
+            "fp": None if (active and not customized) else {"active": active, "action": c.get("action"),
+                                                             "patterns": pats, "exempt": ex}}
+
+def is_ic_engineering(title, rule):
+    t = title or ""
+    return any(r.search(t) for r in rule["rx"]) and not any(r.search(t) for r in rule["exempt"])
 
 def norm(s):
     return T.norm(s)
@@ -238,6 +303,11 @@ def title_filter(j, cfg, sections):
     req = cfg.get("require_title_patterns") or []
     if req and not any(re.search(r, t, re.I) for r in req):
         return "title"
+    rule = cfg.get("_eng_rule")
+    if rule and rule["active"] and is_ic_engineering(t, rule):
+        if rule["action"] == "drop":
+            return "engineering"
+        j["_eng_ic"] = True
     return ""
 
 def pay_check(j, cfg):
@@ -297,6 +367,8 @@ def score(j, cfg, tiers, phrases, weights, now):
     final = max(0, min(100, base + pts))
     if desc_only:   # unread description-only matches top out at Stretch until the agent reads the posting
         final = min(final, 74)
+    if j.get("_eng_ic"):   # engineering_ic_filter action "demote": hands-on engineering title for a non-engineer
+        final = min(final, 34)
     j.update(_base=base, _learned=pts, _reasons=reasons, _score=final, _days=d,
              _skills_hit=hits, _matched=matched)
     return j
@@ -331,6 +403,9 @@ def digest(new, dropped, cfg, now, extra_note, more_path, unfiltered=False):
             terms = ", ".join((j.get("matched_terms") or [])[:5])
             notes.append(f"- {j['company']}, {j['title']}: found by its description, not its title"
                          f"{' (mentions ' + terms + ')' if terms else ''}.")
+        if j.get("_eng_ic"):
+            notes.append(f"- {j['company']}, {j['title']}: hands-on engineering title; it matched on a topic phrase, "
+                         "not one of your target titles, so it is scored Low.")
         if j.get("_loc_ok") is None:
             notes.append(f"- {j['company']}, {j['title']}: location not stated on the posting; check before applying.")
         if str(j.get("details", "ok")) != "ok":
@@ -345,6 +420,7 @@ def digest(new, dropped, cfg, now, extra_note, more_path, unfiltered=False):
         cut = (1 - cfg.get("pay_buffer", 0.15)) * floor
         drops.append(f"{dropped['pay']} below the pay cutoff (posted top under {fmt_money(cut)}, 15% below your {fmt_money(floor)} floor)")
     for k, label in (("location", "outside your locations"), ("title", "titles you ruled out"),
+                     ("engineering", "hands-on engineering titles that matched only a topic phrase"),
                      ("industry", "excluded industries"), ("company", "excluded companies")):
         if dropped.get(k):
             drops.append(f"{dropped[k]} {label}")
@@ -372,6 +448,9 @@ def main():
     ap.add_argument("--prune-days", type=int, default=120, help="forget ledger entries not seen for N days")
     ap.add_argument("--note", default="", help="extra line for the digest (e.g. Workday status)")
     ap.add_argument("--today", help="YYYY-MM-DD (default: today in the user's time zone)")
+    ap.add_argument("--engineering-check", action="store_true",
+                    help="print the engineering_ic_filter decision and the --search rows it would drop or demote, as JSON, "
+                         "then exit without reading or writing the ledger (for the full run and for testing)")
     ap.add_argument("--tz", help="user's IANA time zone, e.g. America/New_York (default: $CAREERMATE_TZ, then the "
                                  "'Time zone:' line in search-preferences.md, then the system zone)")
     a = ap.parse_args()
@@ -393,9 +472,22 @@ def main():
         print(f"warning: {a.config} is missing, so this run applies no location, pay, title, or industry filters. "
               "Off-location and ruled-out roles can score as Strong. Build daily-config.json from "
               "search-preferences.md before a daily run.", file=sys.stderr)
-    fp = hashlib.sha256(json.dumps({k: cfg.get(k) for k in ("pay_floor", "pay_buffer", "location_allow", "location_block",
-                        "exclude_title_patterns", "require_title_patterns", "exclude_companies", "exclude_sections")},
-                        sort_keys=True).encode()).hexdigest()[:12]
+    tiers = T.load_keywords(a.keywords)
+    cfg["_eng_rule"] = rule = engineering_rule(cfg, [p for p, _ in tiers])
+    if a.engineering_check:
+        out = []
+        for path in a.search:
+            for j in load_json(path, []):
+                if rule["active"] and is_ic_engineering(j.get("title"), rule):
+                    out.append({"title": j.get("title"), "company": j.get("company"), "url": j.get("url"),
+                                "matched": j.get("matched"), "action": rule["action"]})
+        print(json.dumps({"active": rule["active"], "action": rule["action"], "why": rule["why"], "rows": out}, indent=1))
+        return
+    fpd = {k: cfg.get(k) for k in ("pay_floor", "pay_buffer", "location_allow", "location_block",
+           "exclude_title_patterns", "require_title_patterns", "exclude_companies", "exclude_sections")}
+    if rule["fp"] is not None:
+        fpd["engineering_ic_filter"] = rule["fp"]
+    fp = hashlib.sha256(json.dumps(fpd, sort_keys=True).encode()).hexdigest()[:12]
     ledger = load_json(a.ledger, {"version": 1, "jobs": {}})
     jobs = ledger.setdefault("jobs", {})
     refilter = ledger.get("filters_fingerprint") not in (None, fp)
@@ -454,7 +546,6 @@ def main():
     new, dropped = [], {}
     if not a.seed and candidates:
         sections = board_sections(boards)
-        tiers = T.load_keywords(a.keywords)
         phrases = T.compile_phrases([p for p, _ in tiers]) if tiers else T.compile_phrases(
             sorted({m for j in rows for m in j.get("matched", [])}))
         weights = load_json(a.weights, {})
@@ -522,6 +613,8 @@ def main():
         msg = (f"already seen {counts['in_ledger']}, reposts {counts['repost']}, in tracker {counts['in_tracker']}, "
                + (f"description-only baseline {counts['description_baseline']}, " if counts['description_baseline'] else "") +
                f"candidates {len(candidates)}, filtered {sum(dropped.values())} {dropped or ''}, NEW {len(new)}")
+    if not a.seed:
+        msg += f" | engineering filter {'on' if rule['active'] else 'off'} ({rule['why']})"
     print(f"--- daily_diff: {len(rows)} search rows | {msg} | ledger {len(jobs)} entries"
           f"{' (dry run)' if a.dry_run else ''} ---", file=sys.stderr)
 

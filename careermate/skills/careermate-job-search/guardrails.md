@@ -10,7 +10,7 @@
 ## Scope Rules
 
 - Do not include roles that have zero skill overlap with the user's profile
-- Do not filter roles based on assumptions about the user's preferences that were not stated in intake
+- Do not filter roles based on assumptions about the user's preferences that were not stated in intake. One standing rule: when none of the user's confirmed titles is an engineering title, hands-on engineering roles that matched only a topic phrase are left out (or ranked Low if the user chose that), and the output says how many; users with engineering titles in their list always keep them
 - Do not include candidate names, referral contacts, or PII of other people in any output
 - Staffing agency postings should be flagged, not hidden
 - When the user gave a pay floor, keep roles whose posted range top is within 15% below it and label them "below floor on base; bonus may close the gap"; drop roles more than 15% below and say how many were dropped and why
